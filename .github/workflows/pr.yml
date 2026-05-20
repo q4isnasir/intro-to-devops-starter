@@ -1,0 +1,36 @@
+# Workflow that runs on every Pull Request targeting main.
+# Its only job: run the unit tests. Fast feedback, blocks merging if they fail.
+name: PR checks
+
+# Trigger: any pull request whose target branch is main.
+# This fires when the PR is opened AND every time new commits are pushed to it.
+on:
+  pull_request:
+    branches: [main]
+
+jobs:
+  unit-tests:
+    # The virtual machine GitHub will rent for us. Free, Ubuntu Linux.
+    runs-on: ubuntu-latest
+
+    steps:
+      # Step 1: clone the repo onto the runner. Without this, the next steps
+      # would have nothing to test. actions/checkout is GitHub's official action.
+      - name: Check out the code
+        uses: actions/checkout@v4
+
+      # Step 2: install Python 3.12 on the runner.
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      # Step 3: install our project dependencies (including pytest).
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      # Step 4: actually run the unit tests.
+      - name: Run unit tests
+        run: pytest app/ -v
