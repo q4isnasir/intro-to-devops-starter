@@ -1,0 +1,120 @@
+# Workflow that runs on every push to main (i.e. every merge into main).
+# Full pipeline: unit tests -> build image -> integration tests -> tag -> push.
+name: Main pipeline
+
+on:
+  push:
+    branches: [main]
+
+# Permissions this workflow needs. "packages: write" lets us push to GHCR.
+permissions:
+  contents: read
+  packages: write
+
+# Variables we reuse throughout the workflow.
+env:
+  # GHCR image name follows: ghcr.io/<owner>/<repo-name>
+  # github.repository is automatically set to "owner/repo" by GitHub.
+  IMAGE_NAME: ghcr.io/${{ github.repository }}
+
+jobs:
+  # ---------- Job 1: unit tests ----------
+  unit-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out the code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Run unit tests
+        run: pytest app/ -v
+
+  # ---------- Job 2: build, integration test, and push the Docker image ----------
+  build-and-push:
+    # Only run this job if unit-tests passed.
+    needs: unit-tests
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out the code
+        uses: actions/checkout@v4
+
+      # Build the image locally on the runner. We tag it with the git SHA
+      # for uniqueness, and also "latest" so it's easy to reference.
+      - name: Build Docker image
+        run: |
+          docker build \
+            -t $IMAGE_NAME:${{ github.sha }} \
+            -t $IMAGE_NAME:latest \
+            .
+
+      # Start the container in the background, then wait for it to be ready.
+      # --rm so the container is removed when stopped.
+      # -d for detached (background).
+      # -p maps host port 8000 -> container port 8000.
+      - name: Start container
+        run: |
+          docker run -d --rm \
+            --name fruitapi \
+            -p 8000:8000 \
+            $IMAGE_NAME:${{ github.sha }}
+
+      # Wait until the app responds to /health, with a timeout.
+      # Without this, integration tests could fire before uvicorn has started.
+      - name: Wait for app to be ready
+        run: |
+          for i in {1..30}; do
+            if curl -sf http://localhost:8000/health; then
+              echo " - app is up"
+              exit 0
+            fi
+            echo "waiting for app... ($i)"
+            sleep 1
+          done
+          echo "app never started"
+          docker logs fruitapi
+          exit 1
+
+      # Install just enough Python to run pytest against the running container.
+      - name: Set up Python for integration tests
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install test dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Run integration tests against the container
+        env:
+          BASE_URL: http://localhost:8000
+        run: pytest tests/ -v
+
+      # Stop the container — we're done with it.
+      - name: Stop container
+        if: always()
+        run: docker stop fruitapi || true
+
+      # Log in to GHCR using the auto-provided token. No manual secret needed.
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # Push both the SHA-tagged image and "latest".
+      - name: Push image to GHCR
+        run: |
+          docker push $IMAGE_NAME:${{ github.sha }}
+          docker push $IMAGE_NAME:latest
