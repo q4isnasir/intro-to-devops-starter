@@ -32,3 +32,13 @@ output "log_group_name" {
   description = "CloudWatch log group for the FruitAPI container"
   value       = aws_cloudwatch_log_group.fruitapi.name
 }
+
+output "alb_dns_name" {
+  description = "Public DNS name of the ALB — use this URL to reach the API"
+  value       = aws_lb.main.dns_name
+}
+
+output "alb_url" {
+  description = "Full URL to hit the API via the ALB"
+  value       = "http://${aws_lb.main.dns_name}"
+}
