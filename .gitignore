@@ -2,3 +2,31 @@ venv/
 __pycache__/
 *.pyc
 .env
+
+# Terraform local files
+**/.terraform/*
+*.tfstate
+*.tfstate.*
+crash.log
+crash.*.log
+*.tfvars
+*.tfvars.json
+
+# --- Terraform ---
+# Local state files (can contain secrets — never commit)
+*.tfstate
+*.tfstate.*
+*.tfstate.backup
+
+# Crash logs
+crash.log
+crash.*.log
+
+# Sensitive variable values
+*.tfvars
+*.tfvars.json
+!example.tfvars
+
+# Downloaded providers and modules
+.terraform/
+.terraform.lock.hcl
