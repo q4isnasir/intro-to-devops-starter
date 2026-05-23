@@ -57,3 +57,27 @@ variable "db_allocated_storage" {
   type        = number
   default     = 20
 }
+
+variable "container_image" {
+  description = "Docker image to run on ECS (GHCR image you pushed)"
+  type        = string
+  default     = "ghcr.io/q4isnasir/intro-to-devops-starter:latest"
+}
+
+variable "task_cpu" {
+  description = "Fargate task CPU units (256 = 0.25 vCPU, smallest)"
+  type        = string
+  default     = "256"
+}
+
+variable "task_memory" {
+  description = "Fargate task memory in MB (512 is smallest with 256 CPU)"
+  type        = string
+  default     = "512"
+}
+
+variable "desired_count" {
+  description = "Number of ECS task replicas to run"
+  type        = number
+  default     = 1
+}
