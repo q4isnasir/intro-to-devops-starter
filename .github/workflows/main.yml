@@ -44,6 +44,26 @@ jobs:
     needs: unit-tests
     runs-on: ubuntu-latest
 
+    # Service containers: GitHub spins these up next to the job for us.
+    # Here we get a MySQL 8 ready to use, then tear it down when the job ends.
+    services:
+      mysql:
+        image: mysql:8.0
+        env:
+          MYSQL_ROOT_PASSWORD: rootpassword
+          MYSQL_DATABASE: fruitdb
+          MYSQL_USER: fruituser
+          MYSQL_PASSWORD: fruitpass
+        ports:
+          - 3306:3306
+        # GitHub will mark the service "healthy" only when MySQL answers ping.
+        # Our later steps wait on this so we don't race the database.
+        options: >-
+          --health-cmd="mysqladmin ping -h localhost -u root -prootpassword"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=10
+
     steps:
       - name: Check out the code
         uses: actions/checkout@v4
@@ -57,15 +77,36 @@ jobs:
             -t $IMAGE_NAME:latest \
             .
 
-      # Start the container in the background, then wait for it to be ready.
-      # --rm so the container is removed when stopped.
-      # -d for detached (background).
-      # -p maps host port 8000 -> container port 8000.
+      # MySQL service is started by GitHub before steps run, but it may still
+      # be initializing the user/database. This extra wait makes startup
+      # deterministic and avoids flaky integration tests.
+      - name: Wait for MySQL to accept connections
+        run: |
+          for i in {1..30}; do
+            if mysqladmin ping -h 127.0.0.1 -P 3306 -u fruituser -pfruitpass --silent; then
+              echo "MySQL is ready"
+              exit 0
+            fi
+            echo "waiting for MySQL... ($i)"
+            sleep 2
+          done
+          echo "MySQL never became ready"
+          exit 1
+
+      # Start the FruitAPI container in the background.
+      # --network host lets the container reach the MySQL service at localhost:3306
+      # (the same way the runner itself reaches it).
+      # We pass DB env vars so the app knows where to connect.
       - name: Start container
         run: |
-          docker run -d --rm \
+          docker run -d \
             --name fruitapi \
-            -p 8000:8000 \
+            --network host \
+            -e DB_HOST=127.0.0.1 \
+            -e DB_PORT=3306 \
+            -e DB_USER=fruituser \
+            -e DB_PASSWORD=fruitpass \
+            -e DB_NAME=fruitdb \
             $IMAGE_NAME:${{ github.sha }}
 
       # Wait until the app responds to /health, with a timeout.
@@ -81,7 +122,7 @@ jobs:
             sleep 1
           done
           echo "app never started"
-          docker logs fruitapi
+          docker logs fruitapi || true
           exit 1
 
       # Install just enough Python to run pytest against the running container.
@@ -100,10 +141,15 @@ jobs:
           BASE_URL: http://localhost:8000
         run: pytest tests/ -v
 
-      # Stop the container — we're done with it.
+      # Show app logs if anything failed — helps debug CI runs.
+      - name: Show app logs on failure
+        if: failure()
+        run: docker logs fruitapi || true
+
+      # Stop and remove the container — we're done with it.
       - name: Stop container
         if: always()
-        run: docker stop fruitapi || true
+        run: docker rm -f fruitapi || true
 
       # Log in to GHCR using the auto-provided token. No manual secret needed.
       - name: Log in to GHCR
