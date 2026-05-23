@@ -79,5 +79,5 @@ variable "task_memory" {
 variable "desired_count" {
   description = "Number of ECS task replicas to run"
   type        = number
-  default     = 1
+  default     = 2
 }

@@ -86,8 +86,18 @@ resource "aws_ecs_service" "fruitapi" {
     assign_public_ip = true # so tasks can pull image + connect to DB without NAT
   }
 
-  # Wait for RDS to be available before starting the service.
-  depends_on = [aws_db_instance.main]
+  # Register each task with the ALB target group so the ALB can route traffic to it.
+  load_balancer {
+    target_group_arn = aws_lb_target_group.fruitapi.arn
+    container_name   = "fruitapi"
+    container_port   = var.app_port
+  }
+
+  # Wait for RDS and the ALB listener before starting the service.
+  depends_on = [
+    aws_db_instance.main,
+    aws_lb_listener.http,
+  ]
 
   tags = {
     Name = "fruitapi-service"
