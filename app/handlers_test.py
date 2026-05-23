@@ -1,13 +1,13 @@
 """Unit tests for FruitAPI handlers.
 
-Uses FastAPI's TestClient — no real server needed. Each test gets a
-fresh, empty store thanks to the reset_store fixture below.
+Uses FastAPI's TestClient and an in-memory FakeFruitStore — no real server,
+no MySQL needed. Each test gets a fresh, empty fake store.
 """
-from fastapi.testclient import TestClient
 import pytest
+from fastapi.testclient import TestClient
 
 from app.main import app
-from app.handlers import store
+from app.store import FakeFruitStore, get_store
 
 # TestClient wraps the FastAPI app and lets us send fake HTTP requests
 # to it in-process. No uvicorn, no network — just function calls.
@@ -15,11 +15,15 @@ client = TestClient(app)
 
 
 @pytest.fixture(autouse=True)
-def reset_store():
-    """Clears the in-memory store before every test in this file."""
-    store._fruits.clear()
-    store._next_id = 1
-    yield
+def fake_store():
+    """
+    Before each test: install a brand-new FakeFruitStore for the app to use.
+    After each test: remove the override so we don't leak state between tests.
+    """
+    store = FakeFruitStore()
+    app.dependency_overrides[get_store] = lambda: store
+    yield store
+    app.dependency_overrides.clear()
 
 
 def seed_fruits():
