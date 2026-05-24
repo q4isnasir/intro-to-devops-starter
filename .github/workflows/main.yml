@@ -164,3 +164,40 @@ jobs:
         run: |
           docker push $IMAGE_NAME:${{ github.sha }}
           docker push $IMAGE_NAME:latest
+        
+        # ---------- Job 3: deploy to AWS ECS ----------
+  # This job runs after the Docker image has been built and pushed to GHCR.
+  # It tells ECS to restart the service so it can pull the newest :latest image.
+  deploy:
+    needs: build-and-push
+    runs-on: ubuntu-latest
+
+    steps:
+      # Set up AWS credentials on the GitHub Actions runner.
+      # The actual values are stored in GitHub repo secrets, not in the code.
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: eu-north-1
+
+      # Ask ECS to start a new deployment.
+      # This makes the service replace the old running tasks with new ones
+      # that use the latest image from GHCR.
+      - name: Force new ECS deployment
+        run: |
+          aws ecs update-service \
+            --cluster fruitapi-cluster \
+            --service fruitapi-service \
+            --force-new-deployment \
+            --region eu-north-1
+
+      # Wait until ECS says the service is stable again.
+      # That means the new tasks are running properly and the old ones are gone.
+      - name: Wait for deployment to stabilize
+        run: |
+          aws ecs wait services-stable \
+            --cluster fruitapi-cluster \
+            --services fruitapi-service \
+            --region eu-north-1
