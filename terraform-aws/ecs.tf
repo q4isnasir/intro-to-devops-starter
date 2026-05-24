@@ -79,6 +79,8 @@ resource "aws_ecs_service" "fruitapi" {
   task_definition = aws_ecs_task_definition.fruitapi.arn
   desired_count   = var.desired_count
   launch_type     = "FARGATE"
+   deployment_minimum_healthy_percent = 100
+  deployment_maximum_percent         = 200
 
   network_configuration {
     subnets          = aws_subnet.public[*].id
